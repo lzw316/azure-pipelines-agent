@@ -17,11 +17,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 "win-x64",
                 "win-x86",
+                "win-arm64",
                 "linux-x64",
                 "linux-arm",
                 "linux-arm64",
-                "rhel.6-x64",
-                "osx-x64"
+                "linux-musl-x64",
+                "linux-musl-arm64",
+                "osx-x64",
+                "osx-arm64"
             };
 
             Assert.True(BuildConstants.Source.CommitHash.Length == 40, $"CommitHash should be SHA-1 hash {BuildConstants.Source.CommitHash}");

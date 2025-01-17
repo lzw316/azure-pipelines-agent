@@ -1,7 +1,11 @@
-using Microsoft.TeamFoundation.DistributedTask.Logging;
-using System;
 
-namespace Agent.Sdk.Util
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+using System;
+using ValueEncoder = Microsoft.TeamFoundation.DistributedTask.Logging.ValueEncoder;
+using ISecretMaskerVSO = Microsoft.TeamFoundation.DistributedTask.Logging.ISecretMasker;
+
+namespace Agent.Sdk.SecretMasking
 {
     /// <summary>
     /// Extended secret masker service, that allows to log origins of secrets
@@ -11,8 +15,6 @@ namespace Agent.Sdk.Util
         private ISecretMasker _secretMasker;
         private ITraceWriter _trace;
 
-        // We don't allow to skip secrets longer than 4 characters.
-        private readonly short _maxMinSecretLength = 4;
 
         private void Trace(string msg)
         {
@@ -50,7 +52,6 @@ namespace Agent.Sdk.Util
 
             AddValue(value);
         }
-
         public void AddRegex(string pattern)
         {
             this._secretMasker.AddRegex(pattern);
@@ -73,6 +74,10 @@ namespace Agent.Sdk.Util
             AddRegex(pattern);
         }
 
+        // We don't allow to skip secrets longer than 5 characters.
+        // Note: the secret that will be ignored is of length n-1.
+        public static int MinSecretLengthLimit => 6;
+
         public int MinSecretLength
         {
             get
@@ -81,14 +86,14 @@ namespace Agent.Sdk.Util
             }
             set
             {
-                if (value > _maxMinSecretLength)
+                if (value > MinSecretLengthLimit)
                 {
-                    _secretMasker.MinSecretLength = _maxMinSecretLength;
-
-                    throw new ArgumentException($"Not allowed minimum secret length. Set max value: {_maxMinSecretLength}");
+                    _secretMasker.MinSecretLength = MinSecretLengthLimit;
                 }
-
-                _secretMasker.MinSecretLength = value;
+                else
+                {
+                    _secretMasker.MinSecretLength = value;
+                }
             }
         }
 
@@ -102,6 +107,7 @@ namespace Agent.Sdk.Util
         {
             this._secretMasker.AddValueEncoder(encoder);
         }
+
 
         /// <summary>
         /// Overloading of AddValueEncoder method with additional logic for logging origin of provided secret
@@ -130,5 +136,7 @@ namespace Agent.Sdk.Util
         {
             return this._secretMasker.MaskSecrets(input);
         }
+
+        ISecretMaskerVSO ISecretMaskerVSO.Clone() => this.Clone();
     }
 }

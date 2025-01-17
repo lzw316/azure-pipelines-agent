@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Services.WebApi;
 using Agent.Sdk.Util;
+using Agent.Sdk.Knob;
 
 namespace Microsoft.VisualStudio.Services.Agent.Worker
 {
@@ -32,7 +33,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
             ArgUtil.NotNullOrEmpty(pipeOut, nameof(pipeOut));
             var agentWebProxy = HostContext.GetService<IVstsAgentWebProxy>();
             var agentCertManager = HostContext.GetService<IAgentCertificateManager>();
-            VssUtil.InitializeVssClientSettings(HostContext.UserAgent, agentWebProxy.WebProxy, agentCertManager.VssClientCertificateManager);
+            VssUtil.InitializeVssClientSettings(HostContext.UserAgent, agentWebProxy.WebProxy, agentCertManager.VssClientCertificateManager, agentCertManager.SkipServerCertificateValidation);
 
             var jobRunner = HostContext.CreateService<IJobRunner>();
 
@@ -66,6 +67,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                 // Initialize the secret masker and set the thread culture.
                 InitializeSecretMasker(jobMessage);
                 SetCulture(jobMessage);
+
+                if(AgentKnobs.EnableNewSecretMasker.GetValue(HostContext).AsBoolean())
+                {
+                    Trace.Verbose($"{Constants.Variables.Agent.EnableAdditionalMaskingRegexes} is On, adding additional masking regexes");
+                    HostContext.AddAdditionalMaskingRegexes();
+                }
 
                 // Start the job.
                 Trace.Info($"Job message:{Environment.NewLine} {StringUtil.ConvertToJson(WorkerUtilities.ScrubPiiData(jobMessage))}");
@@ -138,6 +145,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                     HostContext.SecretMasker.AddValue(secret.Trim(quoteChar), WellKnownSecretAliases.UserSuppliedSecret);
                 }
             }
+
+            // Here we add a trimmed secret value to the dictionary in case of a possible leak through external tools.
+            var trimChars = new char[] { '\r', '\n', ' ' };
+            HostContext.SecretMasker.AddValue(secret.Trim(trimChars), WellKnownSecretAliases.UserSuppliedSecret);
         }
 
         private void InitializeSecretMasker(Pipelines.AgentJobRequestMessage message)
@@ -163,6 +174,20 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker
                     var escapedSecret2 = variable.Value.Value.Replace("\r", "%0D")
                                                              .Replace("\n", "%0A");
                     AddUserSuppliedSecret(escapedSecret2);
+                    // We need to mask the base 64 value of the secret as well
+                    var base64Secret = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(variable.Value.Value));
+                    // Add the base64 secret to the secret masker
+                    AddUserSuppliedSecret(base64Secret);
+                    // also, we escape some characters for variables when we print them out in debug mode. We need to
+                    // add the escaped version of these secrets as well
+                    var escapedSecret3 = base64Secret.Replace("%", "%AZP25")
+                                                     .Replace("\r", "%0D")
+                                                     .Replace("\n", "%0A");
+                    AddUserSuppliedSecret(escapedSecret3);
+                    // Since % escaping may be turned off, also mask a version escaped with just newlines
+                    var escapedSecret4 = base64Secret.Replace("\r", "%0D")
+                                                     .Replace("\n", "%0A");
+                    AddUserSuppliedSecret(escapedSecret4);
                 }
             }
 
